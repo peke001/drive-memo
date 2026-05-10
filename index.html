@@ -1,1 +1,513 @@
 
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ドライブメモ</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap');
+
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --text: #e8f4f8;
+    --muted: #4a6074;
+    --card: #161f2e;
+    --success: #00ff88;
+    --danger: #ff4466;
+    --drive-accent: #00e5ff;
+    --drive-glow: rgba(0,229,255,0.4);
+    --walk-accent: #ff6b35;
+    --walk-glow: rgba(255,107,53,0.4);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  body {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,229,255,0.03) 1px,transparent 1px);
+    background-size:40px 40px;
+    pointer-events:none; z-index:0;
+  }
+
+  .app {
+    position:relative; z-index:1;
+    max-width:480px; margin:0 auto;
+    padding:16px;
+    min-height:100dvh;
+    display:flex; flex-direction:column; gap:14px;
+  }
+
+  /* ヘッダー */
+  .header { display:flex; align-items:center; justify-content:space-between; padding:4px 0; }
+  .header h1 { font-size:1.25rem; font-weight:900; letter-spacing:0.05em; transition:color .4s,text-shadow .4s; }
+  .header .subtitle { font-size:0.6rem; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; margin-top:2px; }
+
+  /* モード切替 */
+  .mode-switcher { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .mode-btn {
+    padding:14px 10px; border-radius:14px; border:2px solid transparent;
+    background:var(--surface); color:var(--muted);
+    font-family:inherit; font-size:0.95rem; font-weight:700;
+    cursor:pointer; text-align:center; transition:all .3s; line-height:1.4;
+  }
+  .mode-btn .mode-icon { font-size:1.6rem; display:block; margin-bottom:4px; }
+  .mode-btn .mode-label { font-size:0.7rem; display:block; letter-spacing:0.08em; }
+  .mode-btn.active-drive { border-color:var(--drive-accent); color:var(--drive-accent); background:rgba(0,229,255,0.08); box-shadow:0 0 18px rgba(0,229,255,0.2); }
+  .mode-btn.active-walk  { border-color:var(--walk-accent);  color:var(--walk-accent);  background:rgba(255,107,53,0.08); box-shadow:0 0 18px rgba(255,107,53,0.2); }
+
+  /* ステータス */
+  .status-bar { background:var(--surface); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px 14px; display:flex; align-items:center; gap:10px; }
+  .mic-dot { width:12px; height:12px; border-radius:50%; background:var(--muted); flex-shrink:0; transition:all .3s; }
+  .mic-dot.listening { background:var(--success); box-shadow:0 0 10px var(--success); animation:pulse 1.4s infinite; }
+  .mic-dot.error { background:var(--danger); }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+  .status-text { font-size:0.78rem; flex:1; line-height:1.5; }
+  .status-text .sub { color:var(--muted); font-size:0.68rem; display:block; }
+
+  /* 認識テキスト */
+  .voice-area { background:var(--surface); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:16px; min-height:72px; }
+  .voice-label { font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+  .transcript-box { font-size:1.05rem; font-weight:700; min-height:30px; transition:color .2s; }
+  .transcript-box.interim { color:var(--drive-accent); opacity:.75; }
+
+  /* ウォーク長押しボタン */
+  .walk-btn-wrap { display:none; flex-direction:column; align-items:center; gap:10px; }
+  .walk-btn-wrap.visible { display:flex; }
+  .walk-hold-btn {
+    width:180px; height:180px; border-radius:50%;
+    border:3px solid var(--walk-accent);
+    background:rgba(255,107,53,0.08);
+    color:var(--walk-accent);
+    font-family:inherit; font-size:0.9rem; font-weight:700;
+    cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    transition:all .15s; user-select:none; -webkit-user-select:none; touch-action:none;
+    box-shadow:0 0 24px rgba(255,107,53,0.15);
+  }
+  .walk-hold-btn .btn-icon { font-size:2.6rem; }
+  .walk-hold-btn.pressing { background:rgba(255,107,53,0.25); box-shadow:0 0 40px rgba(255,107,53,0.45); transform:scale(0.96); }
+  .walk-hint { font-size:0.72rem; color:var(--muted); text-align:center; line-height:1.6; }
+
+  /* 認識結果（ウォーク用・ボタン押し中に表示） */
+  .walk-transcript {
+    background:var(--surface); border:1px solid rgba(255,107,53,0.2);
+    border-radius:12px; padding:14px 16px;
+    font-size:1rem; font-weight:700; color:var(--walk-accent);
+    min-height:48px; display:none; text-align:center;
+    transition:opacity .2s;
+  }
+  .walk-transcript.visible { display:block; }
+
+  /* 手動入力 */
+  .manual-area { background:var(--surface); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:14px; display:flex; gap:8px; }
+  .manual-input { flex:1; background:var(--bg); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px 12px; color:var(--text); font-family:inherit; font-size:0.9rem; outline:none; }
+  .manual-input:focus { border-color:var(--drive-accent); }
+  .btn-save-manual { border:none; border-radius:8px; padding:9px 14px; font-family:inherit; font-weight:700; font-size:0.82rem; cursor:pointer; white-space:nowrap; transition:background .3s; }
+
+  /* リスト */
+  .list-header { display:flex; align-items:center; justify-content:space-between; }
+  .list-title { font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); }
+  .btn-clear-all { font-size:0.68rem; color:var(--danger); background:none; border:none; cursor:pointer; font-family:inherit; padding:4px 8px; }
+  .memo-list { display:flex; flex-direction:column; gap:8px; }
+  .memo-card { background:var(--card); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:13px 14px; display:flex; align-items:center; gap:10px; animation:slideIn .3s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+  .memo-mode-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .memo-info { flex:1; min-width:0; }
+  .memo-name { font-weight:700; font-size:0.98rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .memo-meta { font-size:0.67rem; color:var(--muted); margin-top:3px; line-height:1.5; }
+  .memo-actions { display:flex; gap:6px; flex-shrink:0; }
+  .btn-map { color:#000; border:none; border-radius:8px; padding:7px 12px; font-family:inherit; font-weight:700; font-size:0.78rem; cursor:pointer; }
+  .btn-delete { background:rgba(255,68,102,0.12); color:var(--danger); border:1px solid rgba(255,68,102,0.25); border-radius:8px; padding:7px 10px; font-family:inherit; font-size:0.82rem; cursor:pointer; }
+  .empty-state { text-align:center; padding:28px; color:var(--muted); font-size:0.82rem; line-height:1.9; }
+
+  /* ヘルプ */
+  .help-box { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:12px 14px; font-size:0.72rem; color:var(--muted); line-height:1.75; }
+
+  /* ワンタップ保存ボタン */
+  .quick-save-btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: 2px solid var(--walk-accent);
+    background: rgba(255,107,53,0.12);
+    color: var(--walk-accent);
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: all .2s;
+  }
+  .quick-save-btn:active { background: rgba(255,107,53,0.3); transform: scale(0.97); }
+
+  /* フラッシュ */
+  .save-flash { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.85); background:var(--success); color:#000; font-weight:900; font-size:1.1rem; padding:18px 36px; border-radius:14px; z-index:200; opacity:0; transition:all .2s; text-align:center; pointer-events:none; }
+  .save-flash.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div>
+      <h1 id="headerTitle">🚗 ドライブメモ</h1>
+      <div class="subtitle" id="headerSub">Drive Mode — 常時音声認識</div>
+    </div>
+  </div>
+
+  <div class="mode-switcher">
+    <button class="mode-btn active-drive" id="btnDrive" onclick="setMode('drive')">
+      <span class="mode-icon">🚗</span>
+      <span>ドライブ</span>
+      <span class="mode-label">常時認識</span>
+    </button>
+    <button class="mode-btn" id="btnWalk" onclick="setMode('walk')">
+      <span class="mode-icon">🚶</span>
+      <span>ウォーク</span>
+      <span class="mode-label">ボタン長押し</span>
+    </button>
+  </div>
+
+  <div class="status-bar">
+    <div class="mic-dot" id="micDot"></div>
+    <div class="status-text">
+      <span id="statusMain">初期化中...</span>
+      <span class="sub" id="statusSub"></span>
+    </div>
+  </div>
+
+  <!-- ドライブ用：常時認識テキスト表示 -->
+  <div class="voice-area" id="voiceArea">
+    <div class="voice-label">🎤 認識中のテキスト</div>
+    <div class="transcript-box" id="transcriptBox">待機中...</div>
+  </div>
+
+  <!-- ウォーク用：長押しボタン -->
+  <div class="walk-btn-wrap" id="walkBtnWrap">
+    <button class="walk-hold-btn" id="walkHoldBtn">
+      <span class="btn-icon">🎤</span>
+      <span>長押しで認識</span>
+    </button>
+    <div class="walk-transcript" id="walkTranscript">待機中...</div>
+    <div class="walk-hint">ボタンを押している間だけマイクが動きます<br>「登録 〇〇」と話してください</div>
+    <button class="quick-save-btn" onclick="quickSave()">📍 ワンタップで現在地保存</button>
+  </div>
+
+  <!-- 手動入力 -->
+  <div class="manual-area">
+    <input class="manual-input" id="manualInput" type="text" placeholder="名前を入力して現在地で保存..." />
+    <button class="btn-save-manual" id="btnSaveManual" onclick="saveManual()">保存</button>
+  </div>
+
+  <div class="list-header">
+    <div class="list-title">📍 保存した場所</div>
+    <button class="btn-clear-all" onclick="clearAll()">すべて削除</button>
+  </div>
+  <div class="memo-list" id="memoList"></div>
+
+  <div class="help-box" id="helpBox">
+    <strong style="color:var(--drive-accent)">🚗 ドライブモード：</strong>常時認識中。「登録 〇〇」と話しかけると自動保存。あとで「マップ」でGoogleマップに移動できます。
+  </div>
+</div>
+
+<div class="save-flash" id="saveFlash">📍 保存しました！</div>
+
+<script>
+  let mode = 'drive';
+  let memos = JSON.parse(localStorage.getItem('driveMemos') || '[]');
+  let recognition = null;
+  let isListening = false;
+  let restartTimer = null;
+  let currentPosition = null;
+  let walkPressing = false;
+
+  // GPS常時監視
+  if ('geolocation' in navigator) {
+    navigator.geolocation.watchPosition(
+      pos => {
+        currentPosition = pos.coords;
+        document.getElementById('statusSub').textContent =
+          `GPS ±${Math.round(pos.coords.accuracy)}m`;
+      },
+      err => {
+        document.getElementById('statusSub').textContent = 'GPS取得失敗';
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+  }
+
+  // ── モード切替 ──
+  function setMode(m) {
+    mode = m;
+    stopRecognition();
+    const isDrive = m === 'drive';
+
+    document.getElementById('btnDrive').className = 'mode-btn' + (isDrive ? ' active-drive' : '');
+    document.getElementById('btnWalk').className  = 'mode-btn' + (!isDrive ? ' active-walk' : '');
+    document.getElementById('headerTitle').textContent = isDrive ? '🚗 ドライブメモ' : '🚶 ウォークメモ';
+    document.getElementById('headerSub').textContent   = isDrive ? 'Drive Mode — 常時音声認識' : 'Walk Mode — 長押し音声認識';
+    document.getElementById('voiceArea').style.display    = isDrive ? '' : 'none';
+    document.getElementById('walkBtnWrap').className = 'walk-btn-wrap' + (isDrive ? '' : ' visible');
+
+    const accent = isDrive ? '#00e5ff' : '#ff6b35';
+    document.getElementById('headerTitle').style.color = accent;
+    document.getElementById('headerTitle').style.textShadow = `0 0 20px ${isDrive ? 'rgba(0,229,255,0.5)' : 'rgba(255,107,53,0.5)'}`;
+    document.getElementById('btnSaveManual').style.background = accent;
+    document.getElementById('btnSaveManual').style.color = '#000';
+
+    document.getElementById('helpBox').innerHTML = isDrive
+      ? `<strong style="color:var(--drive-accent)">🚗 ドライブモード：</strong>常時認識中。「登録 〇〇」と話しかけると自動保存。あとで「マップ」でGoogleマップに移動できます。`
+      : `<strong style="color:var(--walk-accent)">🚶 ウォークモード：</strong>ボタンを長押しして「登録 〇〇」と話してください。離すと自動で保存処理します。`;
+
+    if (isDrive) startListening();
+    else setStatus('idle', '長押しボタンを押して話してください', '');
+
+    renderList();
+  }
+
+  // ── 音声認識 ──
+  function startListening() {
+    if (isListening) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus('error', 'このブラウザは音声認識非対応', 'Chrome推奨'); return; }
+
+    recognition = new SR();
+    recognition.lang = 'ja-JP';
+    recognition.continuous = (mode === 'drive');
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      isListening = true;
+      setStatus('listening', mode === 'drive' ? '🎤 常時認識中...' : '🎤 認識中...', '');
+    };
+
+    recognition.onresult = (e) => {
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      const text = interim || final;
+      if (mode === 'drive') {
+        const box = document.getElementById('transcriptBox');
+        box.textContent = text || '待機中...';
+        box.className = 'transcript-box' + (interim ? ' interim' : '');
+      } else {
+        const wt = document.getElementById('walkTranscript');
+        wt.textContent = text || '...';
+      }
+      if (final) processCommand(final.trim());
+    };
+
+    recognition.onerror = (e) => {
+      isListening = false;
+      if (e.error === 'not-allowed') {
+        setStatus('error', 'マイクの許可が必要です', '設定からマイクを許可してください');
+        return;
+      }
+      if (mode === 'drive') scheduleRestart();
+      else { setWalkBtn(false); setStatus('idle', '長押しボタンを押して話してください', ''); }
+    };
+
+    recognition.onend = () => {
+      isListening = false;
+      if (mode === 'drive' && !document.hidden) scheduleRestart();
+      else {
+        setWalkBtn(false);
+        if (mode === 'walk') setStatus('idle', '長押しボタンを押して話してください', '');
+      }
+    };
+
+    try { recognition.start(); }
+    catch(e) { if (mode === 'drive') scheduleRestart(2000); }
+  }
+
+  function stopRecognition() {
+    clearTimeout(restartTimer);
+    if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
+    isListening = false;
+  }
+
+  function scheduleRestart(delay = 1200) {
+    clearTimeout(restartTimer);
+    setStatus('idle', '再起動中...', '');
+    restartTimer = setTimeout(startListening, delay);
+  }
+
+  // ── ウォークボタン ──
+  const walkHoldBtn = document.getElementById('walkHoldBtn');
+
+  function walkStart() {
+    if (mode !== 'walk' || walkPressing) return;
+    walkPressing = true;
+    setWalkBtn(true);
+    const wt = document.getElementById('walkTranscript');
+    wt.textContent = '聞いています...';
+    wt.classList.add('visible');
+    startListening();
+  }
+
+  function walkEnd() {
+    if (!walkPressing) return;
+    walkPressing = false;
+    setWalkBtn(false);
+    // ボタンを離してもすぐ停止せず認識結果を待つ
+    setTimeout(() => {
+      stopRecognition();
+      setStatus('idle', '長押しボタンを押して話してください', '');
+      setTimeout(() => {
+        document.getElementById('walkTranscript').classList.remove('visible');
+      }, 2000);
+    }, 1000);
+  }
+
+  function setWalkBtn(on) {
+    walkHoldBtn.classList.toggle('pressing', on);
+  }
+
+  walkHoldBtn.addEventListener('touchstart',  e => { e.preventDefault(); walkStart(); }, { passive:false });
+  walkHoldBtn.addEventListener('touchend',    e => { e.preventDefault(); walkEnd(); },   { passive:false });
+  walkHoldBtn.addEventListener('touchcancel', e => { e.preventDefault(); walkEnd(); },   { passive:false });
+  walkHoldBtn.addEventListener('mousedown',   walkStart);
+  document.addEventListener('mouseup', () => { if (walkPressing) walkEnd(); });
+
+  // ── ワンタップ保存 ──
+  function quickSave() {
+    const now = new Date();
+    const timeStr = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    saveMemo('スポット ' + timeStr);
+  }
+
+  // ── コマンド処理 ──
+  function processCommand(text) {
+    const m = text.match(/^登録\s*(.+)/);
+    if (m) {
+      saveMemo(m[1].trim());
+      if (mode === 'walk') setTimeout(walkEnd, 300);
+    }
+  }
+
+  // ── 保存 ──
+  function saveMemo(name, isManual = false) {
+    const pos = currentPosition;
+    const memo = {
+      id: Date.now(),
+      name,
+      mode: isManual ? 'manual' : mode,
+      lat: pos ? pos.latitude  : null,
+      lng: pos ? pos.longitude : null,
+      accuracy: pos ? Math.round(pos.accuracy) : null,
+      time: new Date().toLocaleString('ja-JP'),
+    };
+    memos.unshift(memo);
+    localStorage.setItem('driveMemos', JSON.stringify(memos));
+    renderList();
+    showFlash('📍 ' + name);
+  }
+
+  function saveManual() {
+    const input = document.getElementById('manualInput');
+    const name = input.value.trim();
+    if (!name) return;
+    saveMemo(name, true);
+    input.value = '';
+  }
+
+  function deleteMemo(id) {
+    memos = memos.filter(m => m.id !== id);
+    localStorage.setItem('driveMemos', JSON.stringify(memos));
+    renderList();
+  }
+
+  function clearAll() {
+    if (!memos.length) return;
+    if (confirm('すべての保存データを削除しますか？')) {
+      memos = [];
+      localStorage.setItem('driveMemos', JSON.stringify(memos));
+      renderList();
+    }
+  }
+
+  function openMap(lat, lng, name) {
+    const url = (lat && lng)
+      ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+    location.href = url;
+  }
+
+  function setStatus(type, main, sub) {
+    const dot = document.getElementById('micDot');
+    dot.className = 'mic-dot' + (type === 'listening' ? ' listening' : type === 'error' ? ' error' : '');
+    document.getElementById('statusMain').textContent = main;
+    if (sub !== undefined) {
+      // GPSの情報は上書きしない
+      if (sub !== '') document.getElementById('statusSub').textContent = sub;
+    }
+  }
+
+  function showFlash(msg) {
+    const el = document.getElementById('saveFlash');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  function modeColor(m) {
+    return m === 'drive' ? '#00e5ff' : m === 'walk' ? '#ff6b35' : '#888';
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderList() {
+    const el = document.getElementById('memoList');
+    if (!memos.length) {
+      el.innerHTML = `<div class="empty-state">まだ保存した場所がありません<br>「登録 〇〇」と話しかけてください</div>`;
+      return;
+    }
+    const accent = mode === 'drive' ? '#00e5ff' : '#ff6b35';
+    el.innerHTML = memos.map(m => {
+      const icon = m.mode === 'drive' ? '🚗' : m.mode === 'walk' ? '🚶' : '✏️';
+      const lat = m.lat, lng = m.lng, name = escHtml(m.name);
+      return `
+      <div class="memo-card">
+        <div class="memo-mode-dot" style="background:${modeColor(m.mode)}"></div>
+        <div class="memo-info">
+          <div class="memo-name">${icon} ${name}</div>
+          <div class="memo-meta">
+            ${escHtml(m.time)}
+            ${m.lat ? `<br>📍 ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)} ±${m.accuracy}m` : '<br>📍 GPS未取得'}
+          </div>
+        </div>
+        <div class="memo-actions">
+          <button class="btn-map" style="background:${modeColor(m.mode)}"
+            onclick="openMap(${m.lat||'null'},${m.lng||'null'},'${name}')">マップ</button>
+          <button class="btn-delete" onclick="deleteMemo(${m.id})">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && mode === 'drive' && !isListening) startListening();
+  });
+
+  renderList();
+  setMode('drive');
+</script>
+  </body>
